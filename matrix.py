@@ -22,6 +22,14 @@ class matrix:
             self.dimy  = dimy
             self.value = [[0 for row in range(dimy)] for col in range(dimx)]
 
+    def copy(self):
+        res = matrix([[]])
+        res.zero(self.dimx, self.dimy)
+        for i in range(self.dimx):
+            for j in range(self.dimy):
+                res.value[i][j] = self.value[i][j]
+        return res
+                
     def identity(self, dim):
         # check if valid dimension
         if dim < 1:
