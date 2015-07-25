@@ -26,8 +26,11 @@ from matrix import *
 from copy import deepcopy
 import turtle
 import random
+import time
+import EKF
 
-def next_move(hunter_position, hunter_heading, target_measurement, max_distance, OTHER = None):
+def next_move(hunter_position, hunter_heading, target_measurement, 
+              max_distance, OTHER = None):
     # This function will be called after each time the target moves. 
 
     # ************************* My Code Start *******************
@@ -36,47 +39,37 @@ def next_move(hunter_position, hunter_heading, target_measurement, max_distance,
     # [target_measurements, hunter_positions, hunter_headings, P]
     # where P is our uncertainty matrix
     
+    noise_est = 4. # should be 2x-4x noise variance
     if not OTHER: # first time calling this function, set up my OTHER variables.
-        measurements = [target_measurement[:]]
-        hunter_positions = [hunter_position[:]]
-        hunter_headings = [hunter_heading]
-        P = None
         last_est_xy = target_measurement[:]
-        OTHER = [measurements, hunter_positions, hunter_headings, P, last_est_xy] 
+        X = None
+        P = None
+        OTHER = [last_est_xy, X, P]
     else: # not the first time, update my history
-        OTHER[0].append(target_measurement) # I can change measurements w/o affecting 
-        OTHER[1].append(hunter_position)
-        OTHER[2].append(hunter_heading)
-        # will update OTHER[3] = P later
-        # will update OTHER[4] = last_est_xy later
-        measurements, hunter_positions, hunter_headings, P, last_est_xy = OTHER[:] 
-        #print 'measurement: ', measurements[-1]
-        #print 'hunter_position: ', hunter_positions[-1]
-        #print 'hunter_heading: ', hunter_headings[-1]
-        # now I can change these without affecting OTHER
-    
-    est_target_xy, P_new = filter_sensor(measurements, 1, P)
-    # uses the measurement to update uncertainty matrix P and give est_target_xy
-    
-    est_measurements = deepcopy(measurements)
-    est_measurements.append(est_target_xy)
-    next_est_target_xy, _ = filter_sensor(est_measurements,1,P_new)
-    # uses new estimate to predict the next estimated target location
+        last_est_xy, X, P = OTHER[:]
+
+    est_target_xy, X, P = \
+            EKF.EKF_Measurement(target_measurement, X, P, 1., noise_est)
+    # Best guess as to true target coordinates now
+    #print 'est: ', est_target_xy, ', meas: ', target_measurement
+    #next_est_target_xy, X, P = \
+    #        kalman_motion(est_target_xy, X, P)
+    next_est_target_xy, X, P = EKF.EKF_Motion(X, P, dt=1.)
+    # Uses new estimate to predict the next estimated target location
     
     hunter_to_xy = next_est_target_xy # works if target will be within range
     dist_to_target = distance_between(next_est_target_xy, hunter_position)
-    for D in range(int(dist_to_target / (max_distance - .1))):
+    X_next, P_next = X.copy(), P.copy()
+    
+    for D in range(int(dist_to_target / (max_distance))):
         # to catch target, look ahead D moves and go that way
-        est_measurements.append(hunter_to_xy) 
-        #print 'measurements: ',measurements
-        hunter_to_xy, _ = filter_sensor(est_measurements,1,P_new)
-    P_new_arrayed = P_new.matrix2array()
-    OTHER = OTHER[:3]
-    OTHER.append(P_new)
-    OTHER.append(est_target_xy[:])
+        # Don't update P since we have no real information to update with 
+        #hunter_to_xy, X_next, _ = kalman_motion(hunter_to_xy, X_next,P_next)
+        hunter_to_xy, X_next, _ = EKF.EKF_Motion(X_next, P_next, 1.)
+    #print hunter_to_xy    
     turning = angle_trunc(get_heading(hunter_position, hunter_to_xy) - hunter_heading)
     distance = min(dist_to_target, max_distance)
-    
+    OTHER = [next_est_target_xy, X, P]
     # ************************** My Code End ********************
 
     
@@ -84,66 +77,20 @@ def next_move(hunter_position, hunter_heading, target_measurement, max_distance,
     # the progress of the hunt (or maybe some localization information). Your return format
     # must be as follows in order to be graded properly.
     return turning, distance, OTHER
+          
+def angle_trunc(a):
+    """This maps all angles to a domain of [-pi, pi]"""
+    while a < 0.0:
+        a += pi * 2
+    return ((a + pi) % (pi * 2)) - pi
 
-def filter_sensor(measurements, N=1, P = None):
-    # Uses the last N measurements to filter with recurring P uncertainty matrix
-    # Note, this needs [heading, speed] not [x,y]
-    dt = 1. # just assuming a timestep of 1 for now
-    
-    if not P:
-        # P - initial uncertainty: 0 for heading and speed, 100 for turning, acceleration
-        # P can be stored for later use so we don't need to repeat old measurements
-        P = matrix([[0., 0., 0.,   0.], 
-                    [0., 0., 0.,   0.], 
-                    [0., 0., 100., 0.], 
-                    [0., 0., 0., 100.]]) 
-    
-    # u - external motion - none modeled
-    u = matrix([[0.], [0.], [0.], [0.]])
-    # F - next state function: heading2 = heading1 + turning, speed2 = speed1+accel
-    F = matrix([[1., 0., dt, 0.], 
-                [0., 1., 0., dt], 
-                [0., 0., 1., 0.], 
-                [0., 0., 0., 1.]])
-    # H - measurement function: reflect the fact that we observe heading and speed only
-    H = matrix([[1., 0., 0., 0.], 
-                [0., 1., 0., 0.]])
-    # R - measurement uncertainty: use 2x2 matrix with 0.1 as main diagonal
-    R = matrix([[.1, 0.], 
-                [0., .1]])
-    # I - 4d identity matrix
-    I = matrix([[1., 0., 0., 0.], 
-                [0., 1., 0., 0.], 
-                [0., 0., 1., 0.], 
-                [0., 0., 0., 1.]])
-    
-    start = -(min(len(measurements), N))
-
-    # x - initial state (heading, speed, turning, acceleration)   
-    x = matrix([[measurements[start][0]], [measurements[start][1]], [0.], [0.]])
-    #print 'x: '
-    #x.show()
-    for i in range(start,0): # last N measurements
-        
-        # prediction
-        x = (F * x) + u
-        P = F * P * F.transpose()
-        
-        # measurement update
-        Z = matrix([measurements[i]])
-        y = Z.transpose() - (H * x)
-        S = H * P * H.transpose() + R
-        K = P * H.transpose() * S.inverse()
-        x = x + (K * y)
-        P = (I - (K * H)) * P
-    #print('x: ')
-    #x.show()
-    #print('P: ')
-    #P.show()
-    new_state = (x.value[0][0], x.value[1][0])
-
-    return new_state, P
-        
+def get_heading(from_position, to_position):
+    """Returns the angle, in radians, between the target and hunter positions"""
+    from_x, from_y = from_position
+    to_x, to_y = to_position
+    heading = atan2(to_y - from_y, to_x - from_x)
+    heading = angle_trunc(heading)
+    return heading        
         
 def distance_between(point1, point2):
     """Computes distance between point1 and point2. Points are (x, y) pairs."""
@@ -190,22 +137,6 @@ def demo_grading(hunter_bot, target_bot, next_move_fcn, OTHER = None):
         if ctr >= 1000:
             print "It took too many steps to catch the target."
     return caught
-
-
-
-def angle_trunc(a):
-    """This maps all angles to a domain of [-pi, pi]"""
-    while a < 0.0:
-        a += pi * 2
-    return ((a + pi) % (pi * 2)) - pi
-
-def get_heading(hunter_position, target_position):
-    """Returns the angle, in radians, between the target and hunter positions"""
-    hunter_x, hunter_y = hunter_position
-    target_x, target_y = target_position
-    heading = atan2(target_y - hunter_y, target_x - hunter_x)
-    heading = angle_trunc(heading)
-    return heading
 
 def naive_next_move(hunter_position, hunter_heading, target_measurement, max_distance, OTHER):
     """This strategy always tries to steer the hunter directly towards where the target last
@@ -275,6 +206,7 @@ def turtle_demo(hunter_bot, target_bot, next_move_fcn, OTHER = None):
         hunter_position = (hunter_bot.x, hunter_bot.y)
         target_position = (target_bot.x, target_bot.y)
         separation = distance_between(hunter_position, target_position)
+        print 'step: %5d, separation: %5f' % (ctr, separation)
         if separation < separation_tolerance:
             print "You got it right! It took you ", ctr, " steps to catch the target."
             caught = True
@@ -315,5 +247,5 @@ target.set_noise(0.0, 0.0, measurement_noise)
 hunter = robot(-10.0, -10.0, 0.0)
 
 #print demo_grading(hunter, target, next_move)
-turtle_demo(hunter, target, next_move, None)
+turtle_demo(hunter, target, next_move)#, None)
 
