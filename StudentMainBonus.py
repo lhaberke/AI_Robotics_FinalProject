@@ -15,6 +15,66 @@
 # 
 # Same as part 3 and 4. Again, try to catch the target in as few steps as possible.
 
+from robot import *
+from math import *
+#from matrix import *
+from copy import deepcopy
+import turtle
+import random
+import time
+#import EKF
+
+def next_move(hunter_position, hunter_heading, target_measurement, 
+              max_distance, OTHER = None):
+    # This function will be called after each time the target moves. 
+
+    # ************************* My Code Start *******************
+    
+    # Measurement filter needed since it is noisy.   Using None as:
+    # [target_measurements, hunter_positions, hunter_headings, P]
+    # where P is our uncertainty matrix
+    
+    noise_est = 60. # should be greater than noise variance
+    if not OTHER: # first time calling this function, set up my OTHER variables.
+        last_est_xy = target_measurement[:]
+        X = None
+        P = None
+        OTHER = [last_est_xy, X, P]
+    else: # not the first time, update my history
+        last_est_xy, X, P = OTHER[:]
+
+    est_target_xy, X, P = \
+            EKF_Measurement(target_measurement, X, P, 1., noise_est)
+            #EKF.EKF_Measurement(target_measurement, X, P, 1., noise_est)
+    # Best guess as to true target coordinates now
+    #print 'est: ', est_target_xy, ', meas: ', target_measurement
+    #next_est_target_xy, X, P = EKF.EKF_Motion(X, P, dt=1.)
+    next_est_target_xy, X, P = EKF_Motion(X, P, dt=1.)
+    # Uses new estimate to predict the next estimated target location
+    
+    hunter_to_xy = next_est_target_xy # works if target will be within range
+    dist_to_target = distance_between(next_est_target_xy, hunter_position)
+    X_next, P_next = X.copy(), P.copy()
+    
+    for D in range(int(dist_to_target / (max_distance))):
+        # to catch target, look ahead D moves and go that way
+        # Don't update P since we have no real information to update with 
+        #hunter_to_xy, X_next, _ = EKF.EKF_Motion(X_next, P_next, 1.)
+        hunter_to_xy, X_next, _ = EKF_Motion(X_next, P_next, 1.)
+    #print hunter_to_xy    
+    turning = angle_trunc(get_heading(hunter_position, hunter_to_xy) - hunter_heading)
+    distance = min(dist_to_target, max_distance)
+    OTHER = [next_est_target_xy, X, P]
+    # ************************** My Code End ********************
+
+    
+    # The OTHER variable is a place for you to store any historical information about
+    # the progress of the hunt (or maybe some localization information). Your return format
+    # must be as follows in order to be graded properly.
+    return turning, distance, OTHER
+    
+    
+    
 from numpy import zeros, eye, diag, sin, cos, linalg, pi, matrix
 import pylab
 
@@ -25,13 +85,13 @@ def EKF_Motion(X = None, P = None, dt = 0.):
     if not dt: dt = 1.0 # time step
     
     max_speed = 1.5 # taken from problem in this case
-    max_turn_rate = pi/4 # max of 45deg/sec
+    max_turn_rate = pi/8 # max of 22.5deg/sec
     
     # Various motion noise for Q
     x_var = y_var = max_speed*dt    # set for max speed
     theta_var = max_turn_rate*dt    # Assuming max turn in a step
     v_var = max_speed               # set for max speed
-    d_theta_var = max_turn_rate     # assuming low acceleration
+    d_theta_var = .05               # assuming low acceleration
     
     if type(X) == type(None): # Initialize X statespace
         X = matrix([[0.],  # x
@@ -199,65 +259,6 @@ def EKF_Example():
     print 'Sum_error = ', sum_error
     print 'Blue circles are state estimates post measurement update'
     print 'Red plus signs are state estimates post motion update'
-
-
-from robot import *
-from math import *
-#from matrix import *
-from copy import deepcopy
-import turtle
-import random
-import time
-#import EKF
-
-def next_move(hunter_position, hunter_heading, target_measurement, 
-              max_distance, OTHER = None):
-    # This function will be called after each time the target moves. 
-
-    # ************************* My Code Start *******************
-    
-    # Measurement filter needed since it is noisy.   Using None as:
-    # [target_measurements, hunter_positions, hunter_headings, P]
-    # where P is our uncertainty matrix
-    
-    noise_est = 50. # should be 2x-4x noise variance
-    if not OTHER: # first time calling this function, set up my OTHER variables.
-        last_est_xy = target_measurement[:]
-        X = None
-        P = None
-        OTHER = [last_est_xy, X, P]
-    else: # not the first time, update my history
-        last_est_xy, X, P = OTHER[:]
-
-    est_target_xy, X, P = \
-            EKF_Measurement(target_measurement, X, P, 1., noise_est)
-            #EKF.EKF_Measurement(target_measurement, X, P, 1., noise_est)
-    # Best guess as to true target coordinates now
-    #print 'est: ', est_target_xy, ', meas: ', target_measurement
-    #next_est_target_xy, X, P = EKF.EKF_Motion(X, P, dt=1.)
-    next_est_target_xy, X, P = EKF_Motion(X, P, dt=1.)
-    # Uses new estimate to predict the next estimated target location
-    
-    hunter_to_xy = next_est_target_xy # works if target will be within range
-    dist_to_target = distance_between(next_est_target_xy, hunter_position)
-    X_next, P_next = X.copy(), P.copy()
-    
-    for D in range(int(dist_to_target / (max_distance))):
-        # to catch target, look ahead D moves and go that way
-        # Don't update P since we have no real information to update with 
-        #hunter_to_xy, X_next, _ = EKF.EKF_Motion(X_next, P_next, 1.)
-        hunter_to_xy, X_next, _ = EKF_Motion(X_next, P_next, 1.)
-    #print hunter_to_xy    
-    turning = angle_trunc(get_heading(hunter_position, hunter_to_xy) - hunter_heading)
-    distance = min(dist_to_target, max_distance)
-    OTHER = [next_est_target_xy, X, P]
-    # ************************** My Code End ********************
-
-    
-    # The OTHER variable is a place for you to store any historical information about
-    # the progress of the hunt (or maybe some localization information). Your return format
-    # must be as follows in order to be graded properly.
-    return turning, distance, OTHER
           
 def angle_trunc(a):
     """This maps all angles to a domain of [-pi, pi]"""
@@ -288,8 +289,9 @@ def turtle_demo(hunter_bot, target_bot, next_move_fcn, OTHER = None):
     caught = False
     ctr = 0
     #For Visualization
-    
+
     window = turtle.Screen()
+    window.reset()
     window.bgcolor('white')
     chaser_robot = turtle.Turtle()
     chaser_robot.shape('arrow')
@@ -316,8 +318,15 @@ def turtle_demo(hunter_bot, target_bot, next_move_fcn, OTHER = None):
     measuredbroken_robot.penup()
     measuredbroken_robot.resizemode('user')
     measuredbroken_robot.shapesize(0.1, 0.1, 0.1)
+    EKF_broken_robot = turtle.Turtle()
+    EKF_broken_robot.shape('turtle')
+    EKF_broken_robot.color('red')
+    EKF_broken_robot.penup()
+    EKF_broken_robot.resizemode('user')
+    EKF_broken_robot.shapesize(0.1, 0.1, 0.1)
     broken_robot.pendown()
     chaser_robot.pendown()
+    EKF_broken_robot.pendown()
     #End of Visualization
     # We will use your next_move_fcn until we catch the target or time expires.
     while not caught and ctr < 1000:
@@ -346,6 +355,10 @@ def turtle_demo(hunter_bot, target_bot, next_move_fcn, OTHER = None):
         # The target continues its (nearly) circular motion.
         target_bot.move_in_circle()
         #Visualize it
+        measured_estimate = OTHER[0]
+        EKF_broken_robot.setheading(target_bot.heading*180/pi)
+        EKF_broken_robot.goto(measured_estimate[0]*size_multiplier, measured_estimate[1]*size_multiplier-100)
+        EKF_broken_robot.stamp()
         measuredbroken_robot.setheading(target_bot.heading*180/pi)
         measuredbroken_robot.goto(target_measurement[0]*size_multiplier, target_measurement[1]*size_multiplier-100)
         measuredbroken_robot.stamp()
