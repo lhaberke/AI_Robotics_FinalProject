@@ -329,12 +329,14 @@ def turtle_demo(hunter_bot, target_bot, next_move_fcn, OTHER = None):
     EKF_broken_robot.pendown()
     #End of Visualization
     # We will use your next_move_fcn until we catch the target or time expires.
+    min_sep = 9999
     while not caught and ctr < 1000:
         # Check to see if the hunter has caught the target.
         hunter_position = (hunter_bot.x, hunter_bot.y)
         target_position = (target_bot.x, target_bot.y)
         separation = distance_between(hunter_position, target_position)
-        print 'step: %5d, separation: %5f' % (ctr, separation)
+        min_sep = min(min_sep,separation)
+        print 'step: %5d, separation: %5f, min sep: %5f' % (ctr, separation, min_sep)
         if separation < separation_tolerance:
             print "You got it right! It took you ", ctr, " steps to catch the target."
             caught = True
