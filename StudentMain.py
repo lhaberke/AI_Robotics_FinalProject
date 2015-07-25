@@ -1,5 +1,5 @@
-# This file was taken from Udacity's Artificial Intelligence for Robotics course
-#    and was modified as instructed per assignment.
+# Most of this file was taken from Udacity's Artificial Intelligence for 
+#    Robotics course and was modified as instructed per assignment.
 #    This is not a final work.
 
 
