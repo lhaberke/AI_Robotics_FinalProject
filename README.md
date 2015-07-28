@@ -14,3 +14,15 @@ If you are in this class, please don't just copy the code.
  - you'll get more out of it by going through the struggle and...
  - you can do a heck of a lot better than this.
  - my first version used a PID with no kalman filtering at all and did just as well.
+ 
+Note: The Bonus part of the Final Project was passed with the above problem using the following values:
+    # Various motion noise for Q
+    x_var = y_var = 1.5*dt          # set for max speed
+    theta_var = pi/8.*dt            # Assuming max turn in a step
+    v_var =                 1.5     # set for max speed
+    d_theta_var =           .01     # assuming low acceleration
+
+    noise_est = 80. # Set extremely high for last rogue robot catch
+Target bot 1 successfully caught in 270 measurements.
+Target bot 2 successfully caught in 898 measurements.
+Target bot 3 successfully caught in 669 measurements.
